@@ -1,0 +1,81 @@
+const MUSCLES = [
+  { id: 'chest', group: 'push', name: 'Chest', mev: 8, mav: [12, 16], mrv: 20, freq: [2, 3], recovery: 'moderate' },
+  { id: 'front_delts', group: 'push', name: 'Front delts', mev: 0, mav: [0, 6], mrv: 12, freq: [2, 3], recovery: 'fast', note: 'usually fed by pressing; direct work optional' },
+  { id: 'side_delts', group: 'push', name: 'Side delts', mev: 8, mav: [16, 20], mrv: 25, freq: [2, 4], recovery: 'fast' },
+  { id: 'triceps', group: 'push', name: 'Triceps', mev: 6, mav: [10, 14], mrv: 18, freq: [2, 3], recovery: 'moderate' },
+  { id: 'lats', group: 'pull', name: 'Lats', mev: 10, mav: [14, 18], mrv: 22, freq: [2, 3], recovery: 'moderate' },
+  { id: 'mid_back', group: 'pull', name: 'Mid back', mev: 8, mav: [12, 18], mrv: 25, freq: [2, 3], recovery: 'fast' },
+  { id: 'upper_traps', group: 'pull', name: 'Upper traps', mev: 0, mav: [6, 12], mrv: 16, freq: [2, 3], recovery: 'fast' },
+  { id: 'rear_delts', group: 'pull', name: 'Rear delts', mev: 8, mav: [12, 20], mrv: 25, freq: [2, 4], recovery: 'fast' },
+  { id: 'biceps', group: 'pull', name: 'Biceps', mev: 8, mav: [12, 16], mrv: 20, freq: [2, 3], recovery: 'moderate' },
+  { id: 'forearms', group: 'pull', name: 'Forearms', mev: 0, mav: [4, 8], mrv: 12, freq: [2, 3], recovery: 'fast', optional: true },
+  { id: 'quads', group: 'legs', name: 'Quads', mev: 8, mav: [12, 18], mrv: 20, freq: [2, 3], recovery: 'slow' },
+  { id: 'hamstrings', group: 'legs', name: 'Hamstrings', mev: 6, mav: [10, 14], mrv: 16, freq: [2, 3], recovery: 'slow' },
+  { id: 'glutes', group: 'legs', name: 'Glutes', mev: 4, mav: [8, 12], mrv: 16, freq: [2, 3], recovery: 'moderate' },
+  { id: 'adductors', group: 'legs', name: 'Adductors', mev: 0, mav: [0, 4], mrv: 8, freq: [2, 3], recovery: 'fast', optional: true },
+  { id: 'abductors', group: 'legs', name: 'Abductors', mev: 0, mav: [0, 6], mrv: 10, freq: [2, 3], recovery: 'fast', optional: true },
+  { id: 'calves', group: 'legs', name: 'Calves', mev: 8, mav: [12, 16], mrv: 20, freq: [3, 4], recovery: 'fast' },
+  { id: 'abs', group: 'core', name: 'Abs', mev: 0, mav: [8, 16], mrv: 25, freq: [3, 4], recovery: 'fast' },
+  { id: 'obliques', group: 'core', name: 'Obliques', mev: 0, mav: [0, 8], mrv: 16, freq: [2, 3], recovery: 'fast', optional: true },
+  { id: 'erectors', group: 'core', name: 'Erectors', mev: 0, mav: [0, 6], mrv: 12, freq: [2, 3], recovery: 'slow', optional: true },
+  { id: 'neck', group: 'core', name: 'Neck', mev: 0, mav: [4, 8], mrv: 12, freq: [2, 3], recovery: 'fast', optional: true }
+];
+
+const EXERCISES = [
+  { id: 'barbell_bench', name: 'Barbell bench press', contributions: { chest: 1, front_delts: 0.5, triceps: 0.5 } },
+  { id: 'incline_db_press', name: 'Incline dumbbell press', contributions: { chest: 1, front_delts: 0.5, triceps: 0.5 } },
+  { id: 'cable_fly', name: 'Cable fly', contributions: { chest: 1 } },
+  { id: 'overhead_press', name: 'Overhead press', contributions: { front_delts: 1, side_delts: 0.5, triceps: 0.5 } },
+  { id: 'lateral_raise', name: 'Lateral raise', contributions: { side_delts: 1 } },
+  { id: 'rear_delt_fly', name: 'Rear delt fly', contributions: { rear_delts: 1 } },
+  { id: 'tricep_pushdown', name: 'Tricep pushdown', contributions: { triceps: 1 } },
+  { id: 'pullup', name: 'Pull-up', contributions: { lats: 1, biceps: 0.5, mid_back: 0.5 } },
+  { id: 'lat_pulldown', name: 'Lat pulldown', contributions: { lats: 1, biceps: 0.5 } },
+  { id: 'chest_supported_row', name: 'Chest-supported row', contributions: { mid_back: 1, lats: 0.5, biceps: 0.5, rear_delts: 0.25 } },
+  { id: 'cable_row', name: 'Cable row', contributions: { mid_back: 1, lats: 0.5, biceps: 0.25 } },
+  { id: 'shrug', name: 'Shrug', contributions: { upper_traps: 1 } },
+  { id: 'face_pull', name: 'Face pull', contributions: { rear_delts: 1, mid_back: 0.5, upper_traps: 0.25 } },
+  { id: 'barbell_curl', name: 'Barbell curl', contributions: { biceps: 1 } },
+  { id: 'hammer_curl', name: 'Hammer curl', contributions: { biceps: 1, forearms: 0.5 } },
+  { id: 'wrist_curl', name: 'Wrist curl', contributions: { forearms: 1 } },
+  { id: 'back_squat', name: 'Back squat', contributions: { quads: 1, glutes: 0.5, erectors: 0.25 } },
+  { id: 'front_squat', name: 'Front squat', contributions: { quads: 1, glutes: 0.25 } },
+  { id: 'leg_press', name: 'Leg press', contributions: { quads: 1, glutes: 0.5 } },
+  { id: 'leg_extension', name: 'Leg extension', contributions: { quads: 1 } },
+  { id: 'rdl', name: 'Romanian deadlift', contributions: { hamstrings: 1, glutes: 0.5, erectors: 0.25 } },
+  { id: 'leg_curl', name: 'Leg curl', contributions: { hamstrings: 1 } },
+  { id: 'hip_thrust', name: 'Hip thrust', contributions: { glutes: 1, hamstrings: 0.25 } },
+  { id: 'adductor_machine', name: 'Adductor machine', contributions: { adductors: 1 } },
+  { id: 'abductor_machine', name: 'Abductor machine', contributions: { abductors: 1, glutes: 0.25 } },
+  { id: 'standing_calf', name: 'Standing calf raise', contributions: { calves: 1 } },
+  { id: 'seated_calf', name: 'Seated calf raise', contributions: { calves: 1 } },
+  { id: 'hanging_leg_raise', name: 'Hanging leg raise', contributions: { abs: 1, obliques: 0.25 } },
+  { id: 'cable_crunch', name: 'Cable crunch', contributions: { abs: 1 } },
+  { id: 'pallof_press', name: 'Pallof press', contributions: { obliques: 1, abs: 0.25 } },
+  { id: 'back_extension', name: 'Back extension', contributions: { erectors: 1, glutes: 0.5, hamstrings: 0.25 } },
+  { id: 'neck_flexion', name: 'Neck flexion', contributions: { neck: 1 } }
+];
+
+const GLOSSARY = [
+  { id: 'mev', term: 'MEV', short: 'Minimum effective volume', long: 'The smallest weekly volume that produces measurable growth. Below this, you maintain but do not gain.', mechanism: 'Hypertrophy is dose-responsive: too little training signal does not trigger meaningful protein synthesis adaptation. MEV is the floor.' },
+  { id: 'mav', term: 'MAV', short: 'Maximum adaptive volume', long: 'The volume range where gains are best per unit of fatigue. The productive band.', mechanism: 'The dose-response curve behaves like an inverted U. MAV lies between too little stimulus and too much fatigue.' },
+  { id: 'mrv', term: 'MRV', short: 'Maximum recoverable volume', long: 'The ceiling. Beyond this, fatigue exceeds recovery and gains stall or regress.', mechanism: 'Recovery capacity is finite. Past MRV, fatigue accumulates faster than adaptation.' },
+  { id: 'rir', term: 'RIR', short: 'Reps in reserve', long: 'How many more reps were available before failure. RIR 0 means failure; RIR 3 means three remained.', mechanism: 'The last several reps before failure provide most of a set’s hypertrophy stimulus. RIR estimates access to those reps.' },
+  { id: 'rpe', term: 'RPE', short: 'Rate of perceived exertion', long: 'The inverse of RIR on a 1–10 scale. RPE 10 is failure; RPE 7 is about RIR 3.', mechanism: 'It describes effort through a second convention: powerlifting commonly uses RPE, bodybuilding often uses RIR.' },
+  { id: 'hard_set', term: 'hard set', short: 'A set taken to RIR 0–4', long: 'A working set close enough to failure to produce a meaningful growth signal. Sets at RIR 5+ are usually low-yield volume.', mechanism: 'Stimulating repetitions occur near failure. More distance from failure reduces stimulus while recovery still carries a cost.' },
+  { id: 'mechanical_tension', term: 'mechanical tension', short: 'The primary driver of muscle growth', long: 'High force on a muscle, especially when lengthened, taken close to failure.', mechanism: 'Tension is sensed within muscle fibres and initiates signalling associated with muscle protein synthesis.' },
+  { id: 'junk_volume', term: 'junk volume', short: 'Sets adding fatigue without proportional stimulus', long: 'Working sets taken with too many reps in reserve. They consume recovery while contributing little to weekly hard-set volume.', mechanism: 'Without enough stimulating repetitions, hypertrophy signal is small while systemic and local fatigue remain.' },
+  { id: 'sfr', term: 'SFR', short: 'Stimulus-to-fatigue ratio', long: 'How much useful training signal an exercise delivers for its recovery cost.', mechanism: 'Higher-SFR work permits more productive weekly volume before recovery becomes limiting.' },
+  { id: 'frequency', term: 'frequency', short: 'Sessions per week for a muscle', long: 'Splitting weekly volume across sessions can make each session more recoverable and repeatedly elevate protein synthesis.', mechanism: 'Muscle protein synthesis rises after training and falls over subsequent days. Multiple exposures distribute the signal.' },
+  { id: 'deload', term: 'deload', short: 'A planned low-volume recovery week', long: 'Usually about half normal weekly volume, commonly used after a demanding training block.', mechanism: 'Accumulated fatigue can conceal fitness. Reduced work allows recovery to catch up before another progression.' },
+  { id: 'mesocycle', term: 'mesocycle', short: 'A multi-week training block', long: 'Volume progresses through several weeks, often from MEV toward MRV, before a deload.', mechanism: 'Planned variation lets stimulus rise while containing the fatigue that accompanies repeated overload.' }
+];
+
+const LESSONS = [
+  { id: 'rir_too_high', trigger: 'set_logged_with_rir_gte_5', cooldown_days: 3, title: 'this set was likely below the stimulus threshold', body: 'reps within about 4 of failure (RIR 0–4) drive most growth. a set with 5+ in reserve gives fatigue without much signal. aim closer next time, or review the estimate.', related_terms: ['rir', 'hard_set', 'junk_volume'] },
+  { id: 'muscle_below_mev', trigger: 'weekly_volume_below_mev', cooldown_days: 7, title: '{muscle} is below MEV this week', body: '{muscle} needs at least {mev} hard sets per week to grow. current volume is {current}; another {deficit} sets reaches the floor.', related_terms: ['mev'] },
+  { id: 'muscle_above_mrv', trigger: 'weekly_volume_above_mrv', cooldown_days: 7, title: '{muscle} is above MRV', body: 'past MRV, fatigue can exceed recovery and progress may stall. consider a deload or reduce next week by 4–6 sets.', related_terms: ['mrv', 'deload'] },
+  { id: 'frequency_too_low', trigger: 'muscle_trained_once_with_volume_gt_12', cooldown_days: 14, title: '{muscle} is trained once at high volume', body: 'splitting these sets across 2 sessions is often more productive at the same total volume. protein synthesis rises again with each session.', related_terms: ['frequency'] },
+  { id: 'tension_principle', trigger: 'first_set_logged', cooldown_days: 999, title: 'a quick note on what makes muscle grow', body: 'muscle growth is driven mostly by mechanical tension: high force near failure. that is why this app counts hard sets rather than total sets.', related_terms: ['mechanical_tension', 'hard_set'] },
+  { id: 'deload_due', trigger: 'four_consecutive_weeks_at_or_above_mav', cooldown_days: 28, title: 'volume has remained high for 4 weeks', body: 'mesocycles commonly end in a deload of about half normal volume to clear accumulated fatigue before the next block.', related_terms: ['deload', 'mesocycle'] }
+];
