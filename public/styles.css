@@ -277,6 +277,55 @@ h2 em {
   display: block;
 }
 
+.session-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  margin-bottom: 31px;
+  padding: 18px;
+}
+
+.session-heading {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.session-heading h2 {
+  font-size: 20px;
+  margin-top: 5px;
+}
+
+.template-list,
+.session-exercises {
+  border-top: 1px solid var(--border);
+  margin-top: 17px;
+}
+
+.template-row,
+.session-exercise {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  padding: 11px 0;
+}
+
+.template-row strong,
+.session-exercise strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.template-row small,
+.session-exercise small,
+.inline-meta {
+  color: var(--secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 .term {
   border-bottom: 1px dotted var(--accent);
   color: inherit;
@@ -537,6 +586,32 @@ input[type="range"] {
   margin-top: 8px;
 }
 
+.previous-performance {
+  background: var(--raised);
+  border: 1px solid var(--border);
+  color: var(--secondary);
+  font-size: 13px;
+  margin-top: 18px;
+  padding: 11px 12px;
+}
+
+.previous-performance strong {
+  color: var(--text);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.recovery-code {
+  background: var(--raised);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  display: block;
+  font-size: 14px;
+  margin-top: 20px;
+  overflow-wrap: anywhere;
+  padding: 15px 13px;
+}
+
 .toast {
   background: var(--raised);
   border: 1px solid var(--border);
@@ -741,6 +816,35 @@ input[type="range"] {
   padding: 10px 0;
 }
 
+.inline-action {
+  margin: 0 0 0 13px;
+}
+
+.template-builder {
+  display: grid;
+  gap: 10px;
+  margin-top: 17px;
+}
+
+.template-exercise-row {
+  display: grid;
+  gap: 9px;
+  grid-template-columns: 1fr 72px;
+}
+
+.template-exercise-row select,
+.template-exercise-row input {
+  background: var(--raised);
+  border: 1px solid var(--border);
+  min-height: 43px;
+  padding: 9px 11px;
+}
+
+.template-exercise-row input {
+  font-variant-numeric: tabular-nums;
+  width: 100%;
+}
+
 .custom-grid {
   display: grid;
   gap: 10px;
@@ -810,6 +914,7 @@ input[type="range"] {
   .account-button { margin-left: 0; padding-left: 12px; }
   .dashboard-heading { margin-bottom: 25px; }
   .lesson-card { padding: 16px 14px; }
+  .session-panel { padding: 16px 14px; }
   .bottom-sheet { padding: 23px 16px max(22px, env(safe-area-inset-bottom)); }
   .form-grid { gap: 15px; }
   .target-head,

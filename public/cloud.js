@@ -22,6 +22,14 @@ const TensionCloud = {
     return this.request('/auth/sign-in', { method: 'POST', body: JSON.stringify({ email, password }) });
   },
 
+  recover(email, recoveryCode, password) {
+    return this.request('/auth/recover', { method: 'POST', body: JSON.stringify({ email, recovery_code: recoveryCode, password }) });
+  },
+
+  newRecoveryCode() {
+    return this.request('/auth/recovery-code', { method: 'POST' });
+  },
+
   signOut() {
     return this.request('/auth/sign-out', { method: 'POST' });
   },

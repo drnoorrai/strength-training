@@ -38,7 +38,8 @@ async function routeApi(request, env, ctx, path) {
     const passwordHash = await passwordDigest(password, salt);
     await env.DB.prepare('INSERT INTO users (id, email, password_salt, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(user.id, email, salt, passwordHash, stamp, stamp).run();
-    return withSession(json({ user }, 201), await createSession(user.id, env));
+    const recoveryCode = await createRecoveryCode(user.id, env);
+    return withSession(json({ user, recovery_code: recoveryCode }, 201), await createSession(user.id, env));
   }
 
   if (request.method === 'POST' && path === '/api/auth/sign-in') {
@@ -50,6 +51,33 @@ async function routeApi(request, env, ctx, path) {
       return json({ error: 'email or password not recognised' }, 401);
     }
     return withSession(json({ user: { id: record.id, email: record.email } }), await createSession(record.id, env));
+  }
+
+  if (request.method === 'POST' && path === '/api/auth/recover') {
+    assertWriteOrigin(request);
+    await assertAuthLimit(request, env, ctx);
+    const { email, password, recoveryCode } = await readRecoveryRequest(request);
+    const record = await env.DB.prepare(`SELECT users.id, users.email, recovery_codes.id AS code_id
+      FROM users JOIN recovery_codes ON recovery_codes.user_id = users.id
+      WHERE users.email = ? AND recovery_codes.token_hash = ? AND recovery_codes.used_at IS NULL`)
+      .bind(email, await sessionDigest(recoveryCode, env)).first();
+    if (!record) return json({ error: 'recovery details not recognised' }, 401);
+    const stamp = new Date().toISOString();
+    const salt = randomToken(16);
+    const passwordHash = await passwordDigest(password, salt);
+    await env.DB.batch([
+      env.DB.prepare('UPDATE users SET password_salt = ?, password_hash = ?, updated_at = ? WHERE id = ?').bind(salt, passwordHash, stamp, record.id),
+      env.DB.prepare('UPDATE recovery_codes SET used_at = ? WHERE id = ?').bind(stamp, record.code_id),
+      env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(record.id)
+    ]);
+    const replacement = await createRecoveryCode(record.id, env);
+    return withSession(json({ user: { id: record.id, email: record.email }, recovery_code: replacement }), await createSession(record.id, env));
+  }
+
+  if (request.method === 'POST' && path === '/api/auth/recovery-code') {
+    assertWriteOrigin(request);
+    const user = await requireUser(request, env);
+    return json({ recovery_code: await createRecoveryCode(user.id, env) });
   }
 
   if (request.method === 'POST' && path === '/api/auth/sign-out') {
@@ -81,12 +109,23 @@ async function routeApi(request, env, ctx, path) {
 }
 
 async function readCredentials(request) {
-  const body = await readJson(request, 4096);
+  return validateCredentials(await readJson(request, 4096));
+}
+
+function validateCredentials(body) {
   const email = String(body.email || '').trim().toLowerCase();
   const password = String(body.password || '');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw httpError('enter a valid email address', 400);
   if (password.length < 10 || password.length > 200) throw httpError('password must be 10 to 200 characters', 400);
   return { email, password };
+}
+
+async function readRecoveryRequest(request) {
+  const body = await readJson(request, 8192);
+  const credentials = validateCredentials(body);
+  const recoveryCode = String(body.recovery_code || '').trim();
+  if (!/^tension_[A-Za-z0-9_-]{30,80}$/.test(recoveryCode)) throw httpError('recovery details not recognised', 401);
+  return { ...credentials, recoveryCode };
 }
 
 async function readState(request) {
@@ -133,6 +172,17 @@ async function createSession(userId, env) {
   await env.DB.prepare('INSERT INTO sessions (id, user_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?)')
     .bind(crypto.randomUUID(), userId, await sessionDigest(token, env), stamp.toISOString(), expiry.toISOString()).run();
   return { token, expiry };
+}
+
+async function createRecoveryCode(userId, env) {
+  const code = `tension_${randomToken(32)}`;
+  const stamp = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM recovery_codes WHERE user_id = ? AND used_at IS NULL').bind(userId),
+    env.DB.prepare('INSERT INTO recovery_codes (id, user_id, token_hash, created_at) VALUES (?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), userId, await sessionDigest(code, env), stamp)
+  ]);
+  return code;
 }
 
 async function assertAuthLimit(request, env, ctx) {

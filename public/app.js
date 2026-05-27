@@ -5,7 +5,7 @@ const PHASES = ['bulk', 'maintain', 'cut', 'deload'];
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 let state;
-let ui = { view: 'dashboard', detailMuscle: null, sort: 'group', tooltip: null, expandedLessons: new Set() };
+let ui = { view: 'dashboard', detailMuscle: null, sort: 'group', tooltip: null, expandedLessons: new Set(), recoveryCode: null };
 let cloud = { available: true, checking: true, user: null, syncing: false, pending: false, lastSync: null };
 let toastTimer;
 let cloudTimer;
@@ -37,6 +37,9 @@ function createState() {
     phase: 'maintain',
     sets: [],
     custom_exercises: [],
+    templates: [],
+    workout_sessions: [],
+    active_session_id: null,
     targets: {},
     enabled_optional: Object.fromEntries(MUSCLES.filter((m) => m.optional).map((m) => [m.id, false])),
     user_term_exposure: {},
@@ -45,11 +48,23 @@ function createState() {
 }
 
 // ============ STORAGE ============
+function normalizeState(value) {
+  const fresh = createState();
+  return {
+    ...fresh,
+    ...value,
+    templates: Array.isArray(value.templates) ? value.templates : [],
+    workout_sessions: Array.isArray(value.workout_sessions) ? value.workout_sessions : [],
+    active_session_id: typeof value.active_session_id === 'string' ? value.active_session_id : null,
+    lessons: { ...fresh.lessons, ...(value.lessons || {}) }
+  };
+}
+
 function loadState() {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (!parsed || !Array.isArray(parsed.sets) || !parsed.lessons) return createState();
-    return { ...createState(), ...parsed, lessons: { active: [], archive: [], last_shown: {}, ...parsed.lessons } };
+    return normalizeState(parsed);
   } catch (_error) {
     return createState();
   }
@@ -65,6 +80,8 @@ function isValidImport(value) {
   if (!value || typeof value !== 'object') return false;
   if (typeof value.id !== 'string' || typeof value.created_at !== 'string') return false;
   if (!PHASES.includes(value.phase) || !Array.isArray(value.sets) || !Array.isArray(value.custom_exercises)) return false;
+  if (value.templates && !Array.isArray(value.templates)) return false;
+  if (value.workout_sessions && !Array.isArray(value.workout_sessions)) return false;
   return value.sets.every((set) => typeof set.id === 'string' && typeof set.created_at === 'string' &&
     /^\d{4}-\d{2}-\d{2}$/.test(set.date) && typeof set.exercise_id === 'string' &&
     Number.isInteger(set.rir) && set.rir >= 0 && set.rir <= 10);
@@ -159,6 +176,16 @@ function formatSets(number) {
 
 function relatedSets(muscleId) {
   return setsInWeek().filter((set) => exerciseById(set.exercise_id)?.contributions[muscleId]);
+}
+
+function activeSession() {
+  return state.workout_sessions.find((session) => session.id === state.active_session_id && !session.completed_at) || null;
+}
+
+function previousPerformance(exerciseId, sessionId = null) {
+  return [...state.sets]
+    .filter((set) => set.exercise_id === exerciseId && (!sessionId || set.session_id !== sessionId))
+    .sort((a, b) => `${b.date}:${b.created_at}`.localeCompare(`${a.date}:${a.created_at}`))[0] || null;
 }
 
 // ============ LESSON ENGINE ============
@@ -274,6 +301,7 @@ function renderDashboard() {
     </section>
     ${phaseNote() ? `<p class="phase-message">${phaseNote()}</p>` : ''}
     <section class="lesson-stack" aria-label="Active lessons">${renderLessons()}</section>
+    ${renderSessionPanel()}
     <section class="diagram-panel">
       <span class="eyebrow">hard-set heatmap</span>
       ${renderBodyDiagram(volumes, targetsById())}
@@ -288,6 +316,24 @@ function renderDashboard() {
       </div>
       ${renderRows(sorted, volumes)}
     </section>`;
+}
+
+function renderSessionPanel() {
+  const session = activeSession();
+  if (!session) {
+    return `<section class="session-panel">
+      <div class="session-heading"><div><span class="eyebrow">session</span><h2><em>Train</em> from a template</h2></div><button class="secondary-button" data-action="template-new">new template</button></div>
+      ${state.templates.length ? `<div class="template-list">${state.templates.map((template) => `<div class="template-row"><div><strong>${escapeHtml(template.name)}</strong><small>${template.exercises.length} exercises</small></div><button class="secondary-button" data-action="session-start" data-id="${template.id}">start</button></div>`).join('')}</div>` : '<p class="empty">save a routine to start a structured session.</p>'}
+    </section>`;
+  }
+  return `<section class="session-panel active-session">
+    <div class="session-heading"><div><span class="eyebrow">active session</span><h2>${escapeHtml(session.name)}</h2></div><button class="secondary-button" data-action="session-finish" data-id="${session.id}">finish</button></div>
+    <div class="session-exercises">${session.exercises.map((planned) => {
+      const exercise = exerciseById(planned.exercise_id);
+      const logged = state.sets.filter((set) => set.session_id === session.id && set.exercise_id === planned.exercise_id).length;
+      return `<div class="session-exercise"><div><strong>${escapeHtml(exercise?.name || 'Removed exercise')}</strong><small>${logged} / ${planned.target_sets} sets logged</small></div><button class="secondary-button" data-action="session-log" data-exercise="${planned.exercise_id}" data-session="${session.id}">log</button></div>`;
+    }).join('')}</div>
+  </section>`;
 }
 
 function renderLessons() {
@@ -413,6 +459,11 @@ function renderSettings() {
       <button class="secondary-button" data-action="custom-exercise">add exercise</button>
     </section>
     <section class="settings-section">
+      <h2>Training templates</h2>
+      ${state.templates.map((template) => `<div class="custom-exercise"><span>${escapeHtml(template.name)} <small class="inline-meta">${template.exercises.length} exercises</small></span><span><button class="text-button inline-action" data-action="template-edit" data-id="${template.id}">edit</button><button class="text-button inline-action" data-action="template-delete" data-id="${template.id}">remove</button></span></div>`).join('') || '<p class="empty">no session templates</p>'}
+      <button class="secondary-button" data-action="template-new">new template</button>
+    </section>
+    <section class="settings-section">
       <h2>Data</h2>
       <div class="settings-actions">
         <button class="secondary-button" data-action="export">export JSON</button>
@@ -466,19 +517,30 @@ function closeSheet() {
   setTimeout(() => { $('#overlay-root').innerHTML = ''; }, 180);
 }
 
-function logSheet() {
+function performanceMarkup(set) {
+  if (!set) return 'no earlier performance recorded for this exercise.';
+  const load = set.weight ? `${set.weight} kg` : 'bodyweight';
+  const reps = set.reps ? ` x ${set.reps}` : '';
+  return `previous performance: <strong>${load}${reps}</strong> at ${termMarkup('rir', 'RIR')} ${set.rir}.`;
+}
+
+function logSheet(exerciseId = '', sessionId = '') {
   const today = dateKey();
+  const exercise = exerciseById(exerciseId);
+  const previous = exercise ? previousPerformance(exercise.id, sessionId) : null;
   openSheet(`
     <header class="sheet-header"><div><span class="eyebrow">quick log</span><h2>Record a <em>set</em></h2></div><button class="close-button" data-action="close" aria-label="Close">&times;</button></header>
     <form id="log-form">
+      <input name="session_id" type="hidden" value="${escapeHtml(sessionId)}">
       <div class="form-grid">
-      <label class="field full"><span>Exercise</span><input name="exercise" list="exercise-list" required autocomplete="off" placeholder="choose an exercise"><datalist id="exercise-list">${allExercises().map((exercise) => `<option value="${escapeHtml(exercise.name)}"></option>`).join('')}</datalist></label>
+      <label class="field full"><span>Exercise</span><input name="exercise" list="exercise-list" required autocomplete="off" placeholder="choose an exercise" value="${escapeHtml(exercise?.name || '')}"><datalist id="exercise-list">${allExercises().map((item) => `<option value="${escapeHtml(item.name)}"></option>`).join('')}</datalist></label>
         <label class="field"><span>Date</span><input name="date" type="date" value="${today}" required></label>
-        <label class="field"><span>Weight, kg</span><input name="weight" type="number" min="0" step=".25" inputmode="decimal"></label>
-        <label class="field"><span>Reps</span><input name="reps" type="number" min="1" inputmode="numeric"></label>
+        <label class="field"><span>Weight, kg</span><input name="weight" type="number" min="0" step=".25" inputmode="decimal" value="${previous?.weight ?? ''}"></label>
+        <label class="field"><span>Reps</span><input name="reps" type="number" min="1" inputmode="numeric" value="${previous?.reps ?? ''}"></label>
         <label class="field"><span>${termMarkup('rir', 'RIR')}</span><span class="rir-display"><input name="rir" type="range" min="0" max="10" value="2"><output>2</output></span></label>
         <label class="field full"><span>Notes</span><textarea name="notes"></textarea></label>
       </div>
+      <p class="previous-performance" id="previous-performance">${performanceMarkup(previous)}</p>
       <p class="hint">${termMarkup('hard_set', 'hard sets')} count at ${termMarkup('rir', 'RIR')} 0–4. sets above this remain in the log.</p>
       <button class="submit-button" type="submit">save set</button>
     </form>`);
@@ -490,7 +552,8 @@ function accountSheet() {
       <header class="sheet-header"><div><span class="eyebrow">account</span><h2>Cloud <em>sync</em></h2></div><button class="close-button" data-action="close" aria-label="Close">&times;</button></header>
       <p>signed in as <strong>${escapeHtml(cloud.user.email)}</strong>. sets, settings and teaching progress are private to this account and available on another browser after sign-in.</p>
       <p class="account-status">${cloud.syncing ? 'saving changes' : 'all local changes synced'}</p>
-      <div class="settings-actions"><button class="secondary-button" data-action="sync-now">sync now</button><button class="secondary-button" data-action="sign-out">sign out</button></div>`);
+      <p class="hint">a new recovery code replaces the previous one. keep it somewhere private.</p>
+      <div class="settings-actions"><button class="secondary-button" data-action="sync-now">sync now</button><button class="secondary-button" data-action="new-recovery">new recovery code</button><button class="secondary-button" data-action="sign-out">sign out</button></div>`);
     return;
   }
   openSheet(`
@@ -502,9 +565,52 @@ function accountSheet() {
           <label class="field full"><span>Email</span><input name="email" type="text" inputmode="email" autocomplete="email" required></label>
           <label class="field full"><span>Password</span><input name="password" type="password" autocomplete="current-password" minlength="10" required></label>
         </div>
-        <p class="hint">minimum 10 characters. password reset by email is not available yet.</p>
+        <p class="hint">minimum 10 characters. account creation issues one private recovery code.</p>
         <div class="settings-actions"><button class="submit-button" type="submit" data-auth-mode="sign-in">sign in</button><button class="secondary-button" type="submit" data-auth-mode="register">create account</button></div>
-      </form>` : '<p>cloud sync is unavailable at this address. data remains stored in this browser.</p>'}`);
+      </form>
+      <button class="text-button" data-action="open-recovery">forgot password?</button>` : '<p>cloud sync is unavailable at this address. data remains stored in this browser.</p>'}`);
+}
+
+function recoverySheet() {
+  openSheet(`
+    <header class="sheet-header"><div><span class="eyebrow">account recovery</span><h2>Set a new <em>password</em></h2></div><button class="close-button" data-action="close" aria-label="Close">&times;</button></header>
+    <p>enter the private recovery code issued when the account was created, or most recently replaced.</p>
+    <form id="recovery-form">
+      <div class="form-grid">
+        <label class="field full"><span>Email</span><input name="email" type="text" inputmode="email" autocomplete="email" required></label>
+        <label class="field full"><span>Recovery code</span><input name="recovery_code" autocomplete="off" required></label>
+        <label class="field full"><span>New password</span><input name="password" type="password" autocomplete="new-password" minlength="10" required></label>
+      </div>
+      <p class="hint">a successful reset invalidates active sessions and issues a replacement code.</p>
+      <button class="submit-button" type="submit">reset password</button>
+    </form>`);
+}
+
+function recoveryCodeSheet(code) {
+  ui.recoveryCode = code;
+  openSheet(`
+    <header class="sheet-header"><div><span class="eyebrow">recovery code</span><h2>Store this <em>privately</em></h2></div><button class="close-button" data-action="close" aria-label="Close">&times;</button></header>
+    <p>this single-use code is needed to reset the password. it is shown only now; generating another code replaces it.</p>
+    <code class="recovery-code">${escapeHtml(code)}</code>
+    <div class="settings-actions"><button class="submit-button" data-action="download-recovery">download code</button><button class="secondary-button" data-action="close">stored securely</button></div>`);
+}
+
+function templateSheet(templateId = '') {
+  const template = state.templates.find((item) => item.id === templateId);
+  const planned = template?.exercises || [];
+  const rows = Array.from({ length: Math.max(planned.length + 1, 4) }, (_item, index) => {
+    const selected = planned[index];
+    return `<div class="template-exercise-row"><select name="exercise_${index}"><option value="">choose exercise</option>${allExercises().map((exercise) => `<option value="${exercise.id}" ${selected?.exercise_id === exercise.id ? 'selected' : ''}>${escapeHtml(exercise.name)}</option>`).join('')}</select><input name="sets_${index}" type="number" min="1" max="20" value="${selected?.target_sets || 3}" aria-label="planned sets"></div>`;
+  }).join('');
+  openSheet(`
+    <header class="sheet-header"><div><span class="eyebrow">training template</span><h2>${template ? 'Edit' : 'New'} <em>session</em></h2></div><button class="close-button" data-action="close" aria-label="Close">&times;</button></header>
+    <form id="template-form">
+      <input name="template_id" type="hidden" value="${escapeHtml(templateId)}">
+      <label class="field full"><span>Name</span><input name="name" value="${escapeHtml(template?.name || '')}" placeholder="upper a" required></label>
+      <p class="hint">choose exercises and intended set counts. empty rows are ignored.</p>
+      <div class="template-builder">${rows}</div>
+      <button class="submit-button" type="submit">save template</button>
+    </form>`);
 }
 
 function customExerciseSheet() {
@@ -549,7 +655,16 @@ document.addEventListener('click', (event) => {
   if (event.target.classList.contains('sheet-backdrop')) closeSheet();
   if (!action) return;
   if (action === 'open-log') logSheet();
+  if (action === 'session-log') logSheet(target.dataset.exercise, target.dataset.session);
+  if (action === 'session-start') startSession(target.dataset.id);
+  if (action === 'session-finish') finishSession(target.dataset.id);
+  if (action === 'template-new') templateSheet();
+  if (action === 'template-edit') templateSheet(target.dataset.id);
+  if (action === 'template-delete') deleteTemplate(target.dataset.id);
   if (action === 'account') accountSheet();
+  if (action === 'open-recovery') recoverySheet();
+  if (action === 'download-recovery') downloadRecoveryCode();
+  if (action === 'new-recovery') issueRecoveryCode();
   if (action === 'close') closeSheet();
   if (action === 'detail') { ui.detailMuscle = target.dataset.muscle; render(); }
   if (action === 'back') { ui.detailMuscle = null; render(); }
@@ -586,6 +701,7 @@ document.addEventListener('change', async (event) => {
   }
   if (event.target.dataset.target) updateTarget(event.target.dataset.target);
   if (event.target.id === 'import-state') await importState(event.target.files[0]);
+  if (event.target.name === 'exercise' && event.target.closest('#log-form')) updatePreviousPerformance(event.target.value);
 });
 
 document.addEventListener('input', (event) => {
@@ -604,6 +720,14 @@ document.addEventListener('submit', (event) => {
   if (event.target.id === 'auth-form') {
     event.preventDefault();
     authenticate(new FormData(event.target), event.submitter?.dataset.authMode || 'sign-in');
+  }
+  if (event.target.id === 'recovery-form') {
+    event.preventDefault();
+    recoverAccount(new FormData(event.target));
+  }
+  if (event.target.id === 'template-form') {
+    event.preventDefault();
+    saveTemplate(new FormData(event.target));
   }
 });
 
@@ -624,6 +748,7 @@ function saveSet(form) {
     updated_at: stamp,
     date: form.get('date'),
     exercise_id: exercise.id,
+    session_id: String(form.get('session_id') || '') || null,
     weight: form.get('weight') ? Number(form.get('weight')) : null,
     reps: form.get('reps') ? Number(form.get('reps')) : null,
     rir: Number(form.get('rir')),
@@ -637,6 +762,75 @@ function saveSet(form) {
   ui.detailMuscle = null;
   render();
   notify(set.rir <= 4 ? 'hard set recorded' : 'set recorded · below stimulus threshold');
+}
+
+function updatePreviousPerformance(exerciseName) {
+  const form = $('#log-form');
+  if (!form) return;
+  const exercise = allExercises().find((item) => item.name.toLowerCase() === String(exerciseName).trim().toLowerCase());
+  const prior = exercise ? previousPerformance(exercise.id, form.elements.session_id.value || null) : null;
+  $('#previous-performance').innerHTML = performanceMarkup(prior);
+  if (prior && !form.elements.weight.value) form.elements.weight.value = prior.weight ?? '';
+  if (prior && !form.elements.reps.value) form.elements.reps.value = prior.reps ?? '';
+}
+
+function saveTemplate(form) {
+  const stamp = now();
+  const exercises = [];
+  for (const [key, value] of form.entries()) {
+    if (!key.startsWith('exercise_') || !value || exercises.some((item) => item.exercise_id === value)) continue;
+    const index = key.replace('exercise_', '');
+    exercises.push({ exercise_id: value, target_sets: Math.max(1, Math.min(20, Number(form.get(`sets_${index}`)) || 3)) });
+  }
+  if (!exercises.length) { notify('choose at least one exercise'); return; }
+  const id = String(form.get('template_id') || '');
+  const existing = state.templates.find((template) => template.id === id);
+  if (existing) {
+    existing.name = String(form.get('name')).trim();
+    existing.exercises = exercises;
+    existing.updated_at = stamp;
+  } else {
+    state.templates.push({ id: uid(), created_at: stamp, updated_at: stamp, name: String(form.get('name')).trim(), exercises });
+  }
+  persist(); closeSheet(); render(); notify('template saved');
+}
+
+function deleteTemplate(id) {
+  if (state.workout_sessions.some((session) => session.template_id === id && !session.completed_at)) {
+    notify('finish the active session before removing its template');
+    return;
+  }
+  state.templates = state.templates.filter((template) => template.id !== id);
+  persist(); render(); notify('template removed');
+}
+
+function startSession(templateId) {
+  if (activeSession()) { notify('finish the active session first'); return; }
+  const template = state.templates.find((item) => item.id === templateId);
+  if (!template) return;
+  const stamp = now();
+  const session = {
+    id: uid(),
+    created_at: stamp,
+    updated_at: stamp,
+    template_id: template.id,
+    name: template.name,
+    exercises: template.exercises.map((item) => ({ ...item })),
+    started_at: stamp,
+    completed_at: null
+  };
+  state.workout_sessions.push(session);
+  state.active_session_id = session.id;
+  persist(); ui.view = 'dashboard'; render(); notify('session started');
+}
+
+function finishSession(id) {
+  const session = state.workout_sessions.find((item) => item.id === id);
+  if (!session) return;
+  session.completed_at = now();
+  session.updated_at = session.completed_at;
+  state.active_session_id = null;
+  persist(); render(); notify('session finished');
 }
 
 function dismissLesson(id) {
@@ -716,19 +910,65 @@ async function authenticate(form, mode) {
     } else {
       const remote = await TensionCloud.readState();
       if (remote.state) {
-        state = remote.state;
+        state = normalizeState(remote.state);
         persist(false);
       } else {
         cloud.pending = true;
         await syncCloudNow();
       }
     }
-    closeSheet();
     render();
-    notify(mode === 'register' ? 'account created · data synced' : 'signed in · data restored');
+    if (mode === 'register' && response.recovery_code) {
+      recoveryCodeSheet(response.recovery_code);
+      notify('account created · store the recovery code');
+    } else {
+      closeSheet();
+      notify('signed in · data restored');
+    }
   } catch (error) {
     notify(error.message);
   }
+}
+
+async function recoverAccount(form) {
+  try {
+    const response = await TensionCloud.recover(
+      String(form.get('email') || '').trim(),
+      String(form.get('recovery_code') || '').trim(),
+      String(form.get('password') || '')
+    );
+    cloud.user = response.user;
+    const remote = await TensionCloud.readState();
+    if (remote.state) {
+      state = normalizeState(remote.state);
+      persist(false);
+    }
+    render();
+    recoveryCodeSheet(response.recovery_code);
+    notify('password reset · store the replacement code');
+  } catch (error) {
+    notify(error.message);
+  }
+}
+
+async function issueRecoveryCode() {
+  try {
+    const response = await TensionCloud.newRecoveryCode();
+    recoveryCodeSheet(response.recovery_code);
+  } catch (error) {
+    notify(error.message);
+  }
+}
+
+function downloadRecoveryCode() {
+  if (!ui.recoveryCode) return;
+  const content = `Tension account recovery code\n\n${ui.recoveryCode}\n\nStore privately. This code can be used once and is replaced when a new code is issued.\n`;
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([content], { type: 'text/plain' }));
+  link.download = 'tension-recovery-code.txt';
+  link.click();
+  URL.revokeObjectURL(link.href);
+  notify('recovery code downloaded');
 }
 
 async function signOut() {
@@ -756,7 +996,7 @@ async function initCloud() {
     if (cloud.user) {
       const remote = await TensionCloud.readState();
       if (remote.state) {
-        state = remote.state;
+        state = normalizeState(remote.state);
         persist(false);
       } else {
         cloud.pending = true;
@@ -786,7 +1026,7 @@ async function importState(file) {
   try {
     const imported = JSON.parse(await file.text());
     if (!isValidImport(imported)) throw new Error('invalid schema');
-    state = imported;
+    state = normalizeState(imported);
     persist(false);
     ui.view = 'dashboard';
     render();

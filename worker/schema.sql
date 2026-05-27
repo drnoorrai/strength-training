@@ -20,6 +20,16 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
 
+CREATE TABLE IF NOT EXISTS recovery_codes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  used_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS recovery_codes_user_id_idx ON recovery_codes(user_id);
+
 CREATE TABLE IF NOT EXISTS user_states (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   state_json TEXT NOT NULL,
