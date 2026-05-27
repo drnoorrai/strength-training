@@ -931,6 +931,17 @@ input[type="range"] {
   .bottom-sheet input:not([type="range"]),
   .bottom-sheet select,
   .bottom-sheet textarea { font-size: 16px; }
+  .bottom-sheet input[type="date"] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    max-width: 100%;
+    text-align: left;
+  }
+  .bottom-sheet input[type="date"]::-webkit-date-and-time-value {
+    margin: 0;
+    text-align: left;
+  }
   .target-head,
   .target-row { grid-template-columns: minmax(90px, 1fr) repeat(4, 49px); }
 }
