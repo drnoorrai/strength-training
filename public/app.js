@@ -6,7 +6,9 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 let state;
 let ui = { view: 'dashboard', detailMuscle: null, sort: 'group', tooltip: null, expandedLessons: new Set() };
+let cloud = { available: true, checking: true, user: null, syncing: false, pending: false, lastSync: null };
 let toastTimer;
+let cloudTimer;
 
 function now() {
   return new Date().toISOString();
@@ -14,6 +16,16 @@ function now() {
 
 function uid() {
   return crypto.randomUUID();
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[character]));
 }
 
 function createState() {
@@ -46,6 +58,7 @@ function loadState() {
 function persist(touch = true) {
   if (touch) state.updated_at = now();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (cloud.user && touch) scheduleCloudSave();
 }
 
 function isValidImport(value) {
@@ -219,10 +232,19 @@ function exposeTerm(id) {
 // ============ RENDERING ============
 function render() {
   $$('.nav-button').forEach((button) => button.classList.toggle('active', button.dataset.view === ui.view));
+  renderAccountButton();
   if (ui.view === 'settings') renderSettings();
   else if (ui.detailMuscle) renderDetail(ui.detailMuscle);
   else renderDashboard();
   renderTooltip();
+}
+
+function renderAccountButton() {
+  const button = $('#account-button');
+  if (!button) return;
+  if (cloud.checking) button.textContent = 'checking';
+  else if (cloud.user) button.textContent = 'account';
+  else button.textContent = cloud.available ? 'sign in' : 'local only';
 }
 
 function phaseNote() {
@@ -364,7 +386,7 @@ function renderSetRow(set, muscleId) {
   const value = exercise.contributions[muscleId];
   const junk = set.rir >= 5;
   return `<div class="set-row">
-    <p>${exercise.name}<small>${set.reps ? `${set.reps} reps${set.weight ? ` · ${set.weight} kg` : ''} · ` : ''}${termMarkup('rir', 'RIR')} ${set.rir}${junk ? ` · <span class="junk-tag">${termMarkup('junk_volume', 'junk volume')}</span>` : ''}</small></p>
+    <p>${escapeHtml(exercise.name)}<small>${set.reps ? `${set.reps} reps${set.weight ? ` · ${set.weight} kg` : ''} · ` : ''}${termMarkup('rir', 'RIR')} ${set.rir}${junk ? ` · <span class="junk-tag">${termMarkup('junk_volume', 'junk volume')}</span>` : ''}</small></p>
     <span class="set-value">${junk ? '0' : formatSets(value)}</span>
   </div>`;
 }
@@ -374,6 +396,7 @@ function renderSettings() {
   $('#app').innerHTML = `
     <h1 class="settings-title"><em>Settings</em></h1>
     <p class="settings-intro">personal thresholds change the display, not the seeded reference values.</p>
+    <p class="account-status">${renderSyncStatus()}</p>
     <section class="settings-section">
       <h2>Targets</h2>
       <div class="target-head"><span>muscle</span><span>${termMarkup('mev', 'MEV')}</span><span>${termMarkup('mav', 'MAV')} low</span><span>${termMarkup('mav', 'MAV')} high</span><span>${termMarkup('mrv', 'MRV')}</span></div>
@@ -386,7 +409,7 @@ function renderSettings() {
     </section>
     <section class="settings-section">
       <h2>Custom exercises</h2>
-      ${state.custom_exercises.map((exercise) => `<div class="custom-exercise"><span>${exercise.name}</span><button class="text-button" data-action="delete-exercise" data-id="${exercise.id}">remove</button></div>`).join('') || '<p class="empty">no custom exercises</p>'}
+      ${state.custom_exercises.map((exercise) => `<div class="custom-exercise"><span>${escapeHtml(exercise.name)}</span><button class="text-button" data-action="delete-exercise" data-id="${exercise.id}">remove</button></div>`).join('') || '<p class="empty">no custom exercises</p>'}
       <button class="secondary-button" data-action="custom-exercise">add exercise</button>
     </section>
     <section class="settings-section">
@@ -401,6 +424,14 @@ function renderSettings() {
       <h2>Lessons seen</h2>
       ${state.lessons.archive.map((item) => `<div class="archive-entry"><strong>${item.title}</strong>${new Date(item.created_at).toLocaleDateString('en-GB')}</div>`).join('') || '<p class="empty">dismissed lessons appear here</p>'}
     </section>`;
+}
+
+function renderSyncStatus() {
+  if (cloud.checking) return 'checking cloud sync availability';
+  if (!cloud.available) return 'stored on this browser only';
+  if (!cloud.user) return 'stored on this browser only · sign in for cross-device sync';
+  if (cloud.syncing) return `<span class="sync-label">syncing</span> · ${escapeHtml(cloud.user.email)}`;
+  return `<span class="sync-label">cloud synced</span> · ${escapeHtml(cloud.user.email)}`;
 }
 
 function renderTargetEditor(muscle) {
@@ -441,7 +472,7 @@ function logSheet() {
     <header class="sheet-header"><div><span class="eyebrow">quick log</span><h2>Record a <em>set</em></h2></div><button class="close-button" data-action="close" aria-label="Close">&times;</button></header>
     <form id="log-form">
       <div class="form-grid">
-        <label class="field full"><span>Exercise</span><input name="exercise" list="exercise-list" required autocomplete="off" placeholder="choose an exercise"><datalist id="exercise-list">${allExercises().map((exercise) => `<option value="${exercise.name}"></option>`).join('')}</datalist></label>
+      <label class="field full"><span>Exercise</span><input name="exercise" list="exercise-list" required autocomplete="off" placeholder="choose an exercise"><datalist id="exercise-list">${allExercises().map((exercise) => `<option value="${escapeHtml(exercise.name)}"></option>`).join('')}</datalist></label>
         <label class="field"><span>Date</span><input name="date" type="date" value="${today}" required></label>
         <label class="field"><span>Weight, kg</span><input name="weight" type="number" min="0" step=".25" inputmode="decimal"></label>
         <label class="field"><span>Reps</span><input name="reps" type="number" min="1" inputmode="numeric"></label>
@@ -451,6 +482,29 @@ function logSheet() {
       <p class="hint">${termMarkup('hard_set', 'hard sets')} count at ${termMarkup('rir', 'RIR')} 0–4. sets above this remain in the log.</p>
       <button class="submit-button" type="submit">save set</button>
     </form>`);
+}
+
+function accountSheet() {
+  if (cloud.user) {
+    openSheet(`
+      <header class="sheet-header"><div><span class="eyebrow">account</span><h2>Cloud <em>sync</em></h2></div><button class="close-button" data-action="close" aria-label="Close">&times;</button></header>
+      <p>signed in as <strong>${escapeHtml(cloud.user.email)}</strong>. sets, settings and teaching progress are private to this account and available on another browser after sign-in.</p>
+      <p class="account-status">${cloud.syncing ? 'saving changes' : 'all local changes synced'}</p>
+      <div class="settings-actions"><button class="secondary-button" data-action="sync-now">sync now</button><button class="secondary-button" data-action="sign-out">sign out</button></div>`);
+    return;
+  }
+  openSheet(`
+    <header class="sheet-header"><div><span class="eyebrow">cloud sync</span><h2>Private <em>account</em></h2></div><button class="close-button" data-action="close" aria-label="Close">&times;</button></header>
+    ${cloud.available ? `
+      <p>sign in to keep training data across browsers and devices. existing data on this browser is uploaded when a new account is created.</p>
+      <form id="auth-form">
+        <div class="form-grid">
+          <label class="field full"><span>Email</span><input name="email" type="text" inputmode="email" autocomplete="email" required></label>
+          <label class="field full"><span>Password</span><input name="password" type="password" autocomplete="current-password" minlength="10" required></label>
+        </div>
+        <p class="hint">minimum 10 characters. password reset by email is not available yet.</p>
+        <div class="settings-actions"><button class="submit-button" type="submit" data-auth-mode="sign-in">sign in</button><button class="secondary-button" type="submit" data-auth-mode="register">create account</button></div>
+      </form>` : '<p>cloud sync is unavailable at this address. data remains stored in this browser.</p>'}`);
 }
 
 function customExerciseSheet() {
@@ -495,6 +549,7 @@ document.addEventListener('click', (event) => {
   if (event.target.classList.contains('sheet-backdrop')) closeSheet();
   if (!action) return;
   if (action === 'open-log') logSheet();
+  if (action === 'account') accountSheet();
   if (action === 'close') closeSheet();
   if (action === 'detail') { ui.detailMuscle = target.dataset.muscle; render(); }
   if (action === 'back') { ui.detailMuscle = null; render(); }
@@ -510,6 +565,8 @@ document.addEventListener('click', (event) => {
   if (action === 'reset-targets') { state.targets = {}; persist(); render(); notify('reference targets restored'); }
   if (action === 'export') exportState();
   if (action === 'reset') resetState();
+  if (action === 'sync-now') { syncCloudNow(); closeSheet(); }
+  if (action === 'sign-out') signOut();
 });
 
 document.addEventListener('keydown', (event) => {
@@ -544,9 +601,13 @@ document.addEventListener('submit', (event) => {
     event.preventDefault();
     saveCustomExercise(new FormData(event.target));
   }
+  if (event.target.id === 'auth-form') {
+    event.preventDefault();
+    authenticate(new FormData(event.target), event.submitter?.dataset.authMode || 'sign-in');
+  }
 });
 
-$$('.nav-button').forEach((button) => button.addEventListener('click', () => {
+$$('.nav-button[data-view]').forEach((button) => button.addEventListener('click', () => {
   ui.view = button.dataset.view;
   ui.detailMuscle = null;
   ui.tooltip = null;
@@ -616,6 +677,100 @@ function saveCustomExercise(form) {
   persist(); closeSheet(); render(); notify('exercise added');
 }
 
+function scheduleCloudSave() {
+  cloud.pending = true;
+  clearTimeout(cloudTimer);
+  cloudTimer = setTimeout(syncCloudNow, 250);
+}
+
+async function syncCloudNow() {
+  if (!cloud.user || cloud.syncing) return;
+  const revision = state.updated_at;
+  let reschedule = false;
+  cloud.syncing = true;
+  render();
+  try {
+    await TensionCloud.saveState(state);
+    cloud.lastSync = now();
+    cloud.pending = state.updated_at !== revision;
+    reschedule = cloud.pending;
+  } catch (_error) {
+    cloud.pending = true;
+    notify('cloud sync paused · changes remain on this browser');
+  } finally {
+    cloud.syncing = false;
+    render();
+    if (reschedule) scheduleCloudSave();
+  }
+}
+
+async function authenticate(form, mode) {
+  const email = String(form.get('email') || '').trim();
+  const password = String(form.get('password') || '');
+  try {
+    const response = mode === 'register' ? await TensionCloud.register(email, password) : await TensionCloud.signIn(email, password);
+    cloud.user = response.user;
+    if (mode === 'register') {
+      cloud.pending = true;
+      await syncCloudNow();
+    } else {
+      const remote = await TensionCloud.readState();
+      if (remote.state) {
+        state = remote.state;
+        persist(false);
+      } else {
+        cloud.pending = true;
+        await syncCloudNow();
+      }
+    }
+    closeSheet();
+    render();
+    notify(mode === 'register' ? 'account created · data synced' : 'signed in · data restored');
+  } catch (error) {
+    notify(error.message);
+  }
+}
+
+async function signOut() {
+  try {
+    await syncCloudNow();
+    await TensionCloud.signOut();
+  } catch (_error) {
+    notify('sign out could not be completed');
+    return;
+  }
+  cloud.user = null;
+  state = createState();
+  persist(false);
+  closeSheet();
+  ui.view = 'dashboard';
+  ui.detailMuscle = null;
+  render();
+  notify('signed out · this browser is ready for another user');
+}
+
+async function initCloud() {
+  try {
+    const session = await TensionCloud.session();
+    cloud.user = session.user || null;
+    if (cloud.user) {
+      const remote = await TensionCloud.readState();
+      if (remote.state) {
+        state = remote.state;
+        persist(false);
+      } else {
+        cloud.pending = true;
+        await syncCloudNow();
+      }
+    }
+  } catch (_error) {
+    cloud.available = false;
+  } finally {
+    cloud.checking = false;
+    render();
+  }
+}
+
 function exportState() {
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
   const link = document.createElement('a');
@@ -656,6 +811,7 @@ function resetState() {
 state = loadState();
 persist(false);
 render();
+initCloud();
 
 window.TensionTest = {
   state: () => state,

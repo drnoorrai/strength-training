@@ -138,7 +138,7 @@ h2 em {
 
 .utility-nav {
   display: flex;
-  gap: 19px;
+  gap: 17px;
 }
 
 .nav-button {
@@ -151,6 +151,33 @@ h2 em {
 .nav-button:hover,
 .nav-button.active {
   color: var(--text);
+}
+
+.account-button {
+  border-left: 1px solid var(--border);
+  color: var(--accent);
+  margin-left: 2px;
+  padding-left: 17px;
+}
+
+.account-status {
+  color: var(--secondary);
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+.account-status strong {
+  color: var(--text);
+  font-weight: 400;
+}
+
+.auth-divider {
+  border-top: 1px solid var(--border);
+  margin: 21px 0 17px;
+}
+
+.sync-label {
+  color: var(--accent);
 }
 
 .app-shell {
@@ -779,6 +806,8 @@ input[type="range"] {
   .site-header { padding: 0 16px; }
   .app-shell { padding: 31px 16px 18px; }
   .brand small { display: none; }
+  .utility-nav { gap: 12px; }
+  .account-button { margin-left: 0; padding-left: 12px; }
   .dashboard-heading { margin-bottom: 25px; }
   .lesson-card { padding: 16px 14px; }
   .bottom-sheet { padding: 23px 16px max(22px, env(safe-area-inset-bottom)); }

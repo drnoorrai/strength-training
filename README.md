@@ -1,8 +1,8 @@
 # Tension
 
-A quiet weekly hard-set volume tracker built around the MEV / MAV / MRV framework.
+A quiet, private weekly hard-set volume tracker built around the MEV / MAV / MRV framework.
 
-**Live:** [drnoorrai.github.io/strength-training](https://drnoorrai.github.io/strength-training/)
+**Live:** [tension.noor-rai-ca.workers.dev](https://tension.noor-rai-ca.workers.dev/)
 
 ![Tension dashboard screenshot placeholder](https://placehold.co/1200x760/0f1411/e8ece9?text=Tension+dashboard)
 
@@ -10,15 +10,15 @@ A quiet weekly hard-set volume tracker built around the MEV / MAV / MRV framewor
 
 Tension records weekly hard-set volume for each muscle and places that volume against minimum effective volume (MEV), maximum adaptive volume (MAV), and maximum recoverable volume (MRV). Sets close enough to failure contribute fractional volume according to the muscles an exercise trains; lower-stimulus work remains visible without distorting the useful total.
 
-The app teaches while it records. Terms can be opened in context and brief lessons appear when a user’s own data makes an idea relevant: effort below the stimulus threshold, volume below MEV, or accumulating fatigue beyond MRV. The interface stays quiet until explanation is useful.
+The app teaches while it records. Terms can be opened in context and brief lessons appear when a user’s own data makes an idea relevant: effort below the stimulus threshold, volume below MEV, or accumulating fatigue beyond MRV. The interface stays quiet until explanation is useful. A private Cloudflare account syncs the complete record across browsers and devices.
 
 ## Data model
 
-All user data is stored locally under `tension.v1.state`. Logged sets, custom exercises, archived lessons, and the root state carry UUIDs and ISO timestamps; user-edited target ranges are stored separately from seeded defaults. This keeps a later move to synced records mechanical.
+Signed-out state is stored locally under `tension.v1.state`. When a user creates an account or signs in, a Cloudflare Worker writes the complete private state document to D1 and restores it on another browser. Logged sets, custom exercises, archived lessons, and the root state carry UUIDs and ISO timestamps.
 
 ## Local development
 
-Open `index.html` in a browser, or serve the repository root with any small static HTTP server. There is no build step and there are no dependencies.
+The production frontend is in `public/` and is served with the API Worker through Cloudflare Static Assets. For local cloud-sync development, apply `worker/schema.sql` to a local D1 database with Wrangler, place a local `SESSION_PEPPER` in an ignored `.dev.vars` file, then run `npx wrangler dev`. The browser interface remains vanilla HTML, CSS and JavaScript with no runtime dependencies.
 
 ## Roadmap
 
